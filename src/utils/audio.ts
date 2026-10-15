@@ -1,3 +1,4 @@
+import { getPrebuiltAudioPath } from '../data/prebuiltAudio';
 /**
  * High-fidelity Audio & Voice Service for Vietnamese 3D Interactive Flipbook.
  * Handles Gemini TTS 24kHz audio via PCM/WAV decoding, Web Speech API (Vietnamese only),
@@ -207,6 +208,26 @@ class SoundService {
   }) {
     if (this.isMuted) return;
     this.stopCurrentVoice();
+
+    // 0. Prefer bundled MP3/WAV: works on every device and does not consume TTS quota.
+    const bundledPath = getPrebuiltAudioPath(role, text);
+    if (bundledPath) {
+      try {
+        const response = await fetch(bundledPath, { method: 'HEAD' });
+        if (response.ok && (response.headers.get('content-type') || '').toLowerCase().includes('audio')) {
+          const audio = new Audio(bundledPath);
+          this.currentAudioElement = audio;
+          audio.playbackRate = speed;
+          audio.onplay = () => onStart?.();
+          audio.onended = () => { this.currentAudioElement = null; onEnd?.(); };
+          audio.onerror = () => { this.currentAudioElement = null; onError?.('Không thể phát tệp âm thanh: ' + bundledPath); };
+          await audio.play();
+          return;
+        }
+      } catch (err) {
+        console.warn('Prebuilt audio unavailable, trying other sources:', bundledPath, err);
+      }
+    }
 
     // 1. Check custom uploaded audio in localStorage first
     const customKey = `custom_audio_${role}_${text.trim().substring(0, 40)}`;
